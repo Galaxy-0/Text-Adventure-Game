@@ -19,17 +19,35 @@ class Character {
     this.specialAbilities = [];
   }
 
-  setBackground(background) {
-    this.background = background;
-    // 根据背景设置初始属性加成
-    if (background.attributeBonuses) {
-      Object.entries(background.attributeBonuses).forEach(([attr, bonus]) => {
-        this.attributes[attr] += bonus;
-      });
+  setBackground(backgroundData) {
+    this.background = backgroundData;
+    
+    // 从场景数据中查找对应的背景配置
+    const scenarios = require('../data/scenarios');
+    let backgroundConfig = null;
+    
+    for (const scenario of Object.values(scenarios)) {
+      if (scenario.backgrounds) {
+        backgroundConfig = scenario.backgrounds.find(bg => bg.id === backgroundData.id);
+        if (backgroundConfig) break;
+      }
     }
     
-    if (background.startingItems) {
-      this.items.push(...background.startingItems);
+    if (backgroundConfig) {
+      // 根据背景设置初始属性加成
+      if (backgroundConfig.attributeBonuses) {
+        Object.entries(backgroundConfig.attributeBonuses).forEach(([attr, bonus]) => {
+          this.attributes[attr] += bonus;
+        });
+      }
+      
+      if (backgroundConfig.startingItems) {
+        this.items.push(...backgroundConfig.startingItems);
+      }
+      
+      if (backgroundConfig.specialAbilities) {
+        this.specialAbilities.push(...backgroundConfig.specialAbilities);
+      }
     }
   }
 

@@ -1,10 +1,12 @@
 class Game {
-  constructor(id, scenario, dmId) {
+  constructor(id, scenario, dmId, config = {}) {
     this.id = id;
     this.scenario = scenario;
     this.dmId = dmId;
     this.players = new Map();
-    this.maxPlayers = 4;
+    this.maxPlayers = config.totalPlayers || 4;
+    this.aiPlayerCount = config.aiPlayers || 0;
+    this.isAIMaster = config.dmMode === 'ai';
     this.currentTurn = 0;
     this.gameState = 'waiting'; // waiting, playing, paused, ended
     this.narrative = [];
@@ -12,15 +14,68 @@ class Game {
     this.gameTime = 0;
     this.globalAttributes = new Map();
     this.createdAt = new Date();
+    this.lastActionTime = Date.now();
+    this.aiActionTimer = null;
   }
 
   addPlayer(playerId, character) {
     this.players.set(playerId, character);
     this.addNarrativeEvent(`${character.name} 加入了冒险团队`);
     
-    if (this.players.size === 1 && this.gameState === 'waiting') {
+    // 检查是否需要自动开始游戏
+    this.checkGameStart();
+  }
+
+  checkGameStart() {
+    const humanPlayers = Array.from(this.players.values()).filter(p => !p.isAI).length;
+    const totalPlayersNeeded = this.maxPlayers - this.aiPlayerCount;
+    
+    if (humanPlayers >= totalPlayersNeeded && this.gameState === 'waiting') {
       this.gameState = 'playing';
       this.addNarrativeEvent(this.scenario.introText);
+      
+      // 如果是AI Master，启动自动内容生成
+      if (this.isAIMaster) {
+        this.startAIMasterMode();
+      }
+    }
+  }
+
+  createAIPlayers() {
+    const AIPlayer = require('./AIPlayer');
+    const aiNames = ['李智', '王谋', '张策', '刘慧']; // 预设AI角色名
+    
+    for (let i = 0; i < this.aiPlayerCount; i++) {
+      const aiPlayer = new AIPlayer(aiNames[i] || `AI角色${i + 1}`, this.id);
+      aiPlayer.autoSelectBackground();
+      aiPlayer.autoAllocateAttributes();
+      this.addPlayer(aiPlayer.playerId, aiPlayer);
+    }
+  }
+
+  startAIMasterMode() {
+    // 启动AI Master的定期内容生成
+    this.aiActionTimer = setInterval(() => {
+      this.processAITurn();
+    }, 30000); // 每30秒检查一次
+  }
+
+  processAITurn() {
+    // 让AI玩家考虑是否行动
+    const aiPlayers = Array.from(this.players.values()).filter(p => p.isAI);
+    
+    aiPlayers.forEach(aiPlayer => {
+      if (aiPlayer.shouldTakeAction(this.getState())) {
+        const action = aiPlayer.generateAction(this.getState());
+        this.processPlayerAction(aiPlayer.playerId, action);
+      }
+    });
+  }
+
+  stopAIMasterMode() {
+    if (this.aiActionTimer) {
+      clearInterval(this.aiActionTimer);
+      this.aiActionTimer = null;
     }
   }
 
@@ -100,6 +155,9 @@ class Game {
   }
 
   getState() {
+    const humanPlayers = Array.from(this.players.values()).filter(p => !p.isAI).length;
+    const totalPlayersNeeded = this.maxPlayers - this.aiPlayerCount;
+    
     return {
       id: this.id,
       scenario: this.scenario.name,
@@ -109,7 +167,14 @@ class Game {
       gameState: this.gameState,
       currentTurn: this.currentTurn,
       gameTime: this.gameTime,
-      canJoin: this.players.size < this.maxPlayers && this.gameState === 'waiting'
+      lastActionTime: this.lastActionTime,
+      isAIMaster: this.isAIMaster,
+      canJoin: humanPlayers < totalPlayersNeeded && this.gameState === 'waiting',
+      config: {
+        maxPlayers: this.maxPlayers,
+        aiPlayerCount: this.aiPlayerCount,
+        humanPlayersNeeded: totalPlayersNeeded - humanPlayers
+      }
     };
   }
 }

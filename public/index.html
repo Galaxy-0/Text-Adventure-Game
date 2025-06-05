@@ -127,6 +127,27 @@
             border-color: #c9a96e;
             background: rgba(60, 50, 40, 0.8);
         }
+        .game-config {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 10px;
+            margin: 15px 0;
+        }
+        .game-config div {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .game-config select {
+            width: 200px;
+        }
+        .config-info {
+            background: rgba(50, 40, 30, 0.6);
+            padding: 10px;
+            border-radius: 5px;
+            font-style: italic;
+            color: #c9a96e;
+        }
     </style>
 </head>
 <body>
@@ -157,6 +178,41 @@
                         <p>浪人在传统荣誉与现实生存间寻找平衡</p>
                     </div>
                 </div>
+                
+                <div class="form-group">
+                    <h4>🎮 游戏配置</h4>
+                    <div class="game-config">
+                        <div>
+                            <label>总玩家数量:</label>
+                            <select id="totalPlayers">
+                                <option value="1">1人 (单人游戏)</option>
+                                <option value="2" selected>2人</option>
+                                <option value="3">3人</option>
+                                <option value="4">4人</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label>AI玩家数量:</label>
+                            <select id="aiPlayers">
+                                <option value="0">0个 (全人类玩家)</option>
+                                <option value="1" selected>1个</option>
+                                <option value="2">2个</option>
+                                <option value="3">3个</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label>地城主模式:</label>
+                            <select id="dmMode">
+                                <option value="ai" selected>🤖 AI地城主 (完全自动)</option>
+                                <option value="human">👤 人类地城主</option>
+                            </select>
+                        </div>
+                    </div>
+                    <p class="config-info">
+                        <span id="configSummary">配置：2人游戏，1个AI玩家，AI地城主</span>
+                    </p>
+                </div>
+                
                 <button onclick="createGame()">创建游戏</button>
             </div>
 
@@ -172,6 +228,30 @@
                 </div>
                 <button onclick="joinGame()">加入游戏</button>
             </div>
+        </div>
+
+        <div id="characterCreation" class="hidden">
+            <h2>创建角色</h2>
+            <div class="form-group">
+                <label>角色名称:</label>
+                <input type="text" id="characterName" placeholder="输入角色名称">
+            </div>
+            <div class="form-group">
+                <label>选择背景:</label>
+                <div id="backgroundSelection"></div>
+            </div>
+            <div class="form-group">
+                <label>属性分配 (总共5点):</label>
+                <div id="attributeAllocation">
+                    <div>战略: <input type="number" id="strategy" min="0" max="5" value="1"></div>
+                    <div>辩才: <input type="number" id="eloquence" min="0" max="5" value="1"></div>
+                    <div>学识: <input type="number" id="knowledge" min="0" max="5" value="1"></div>
+                    <div>洞察: <input type="number" id="insight" min="0" max="5" value="1"></div>
+                    <div>人脉: <input type="number" id="connections" min="0" max="5" value="1"></div>
+                    <div>剩余点数: <span id="remainingPoints">0</span></div>
+                </div>
+            </div>
+            <button onclick="createCharacter()">创建角色</button>
         </div>
 
         <div id="gameInterface" class="hidden">

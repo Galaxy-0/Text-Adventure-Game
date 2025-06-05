@@ -28,9 +28,24 @@ io.on('connection', (socket) => {
   console.log('玩家连接:', socket.id);
 
   socket.on('createGame', (data) => {
-    const game = gameManager.createGame(data.scenario, socket.id);
+    const config = {
+      totalPlayers: data.totalPlayers || 2,
+      aiPlayers: data.aiPlayers || 0,
+      dmMode: data.dmMode || 'human'
+    };
+    
+    const game = gameManager.createGame(data.scenario, socket.id, config);
     socket.join(game.id);
-    socket.emit('gameCreated', { gameId: game.id, game });
+    socket.emit('gameCreated', { gameId: game.id, game: game.getState() });
+  });
+
+  socket.on('createCharacter', (data) => {
+    const result = gameManager.createCharacter(data.gameId, socket.id, data.characterData);
+    if (result.success) {
+      io.to(data.gameId).emit('characterCreated', result.game);
+    } else {
+      socket.emit('error', result.error);
+    }
   });
 
   socket.on('joinGame', (data) => {
@@ -49,7 +64,9 @@ io.on('connection', (socket) => {
       io.to(data.gameId).emit('gameUpdate', result.gameState);
       
       if (result.needsLLMResponse) {
-        const llmResponse = await llmService.generateResponse(result.gameState, data.action);
+        const game = gameManager.getGame(data.gameId);
+        const isAIMaster = game && game.isAIMaster;
+        const llmResponse = await llmService.generateResponse(result.gameState, data.action, isAIMaster);
         const updateResult = gameManager.updateGameWithLLMResponse(data.gameId, llmResponse);
         io.to(data.gameId).emit('gameUpdate', updateResult.gameState);
       }

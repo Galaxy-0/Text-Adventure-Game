@@ -9,7 +9,7 @@ class GameManager {
     this.playerToGame = new Map();
   }
 
-  createGame(scenarioId, dmId) {
+  createGame(scenarioId, dmId, config = {}) {
     const gameId = uuidv4();
     const scenario = scenarios[scenarioId];
     
@@ -17,9 +17,14 @@ class GameManager {
       throw new Error('未知的场景ID');
     }
 
-    const game = new Game(gameId, scenario, dmId);
+    const game = new Game(gameId, scenario, dmId, config);
     this.games.set(gameId, game);
     this.playerToGame.set(dmId, gameId);
+    
+    // 如果配置了AI玩家，立即创建它们
+    if (config.aiPlayers > 0) {
+      game.createAIPlayers();
+    }
     
     return game;
   }
@@ -36,6 +41,33 @@ class GameManager {
     }
 
     const character = new Character(playerName, playerId);
+    game.addPlayer(playerId, character);
+    this.playerToGame.set(playerId, gameId);
+
+    return { success: true, game: game.getState() };
+  }
+
+  createCharacter(gameId, playerId, characterData) {
+    const game = this.games.get(gameId);
+    
+    if (!game) {
+      return { success: false, error: '游戏不存在' };
+    }
+
+    if (game.players.has(playerId)) {
+      return { success: false, error: '玩家已有角色' };
+    }
+
+    const character = new Character(characterData.name, playerId);
+    
+    if (characterData.background) {
+      character.setBackground(characterData.background);
+    }
+    
+    if (characterData.attributes) {
+      character.allocateAttributes(characterData.attributes);
+    }
+
     game.addPlayer(playerId, character);
     this.playerToGame.set(playerId, gameId);
 

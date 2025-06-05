@@ -16,14 +16,67 @@ class GameClient {
                 this.selectedScenario = card.dataset.scenario;
             });
         });
+
+        // 游戏配置监听
+        ['totalPlayers', 'aiPlayers', 'dmMode'].forEach(id => {
+            const element = document.getElementById(id);
+            if (element) {
+                element.addEventListener('change', () => this.updateConfigSummary());
+            }
+        });
+
+        // 初始化配置摘要
+        this.updateConfigSummary();
+    }
+
+    updateConfigSummary() {
+        const totalPlayers = parseInt(document.getElementById('totalPlayers')?.value || 2);
+        const aiPlayers = parseInt(document.getElementById('aiPlayers')?.value || 1);
+        const dmMode = document.getElementById('dmMode')?.value || 'ai';
+        
+        // 验证AI玩家数量不能超过总数
+        const aiSelect = document.getElementById('aiPlayers');
+        if (aiPlayers >= totalPlayers) {
+            // 自动调整AI玩家数量
+            const maxAI = totalPlayers - 1;
+            if (maxAI >= 0) {
+                aiSelect.value = maxAI;
+            }
+        }
+
+        const humanPlayers = totalPlayers - parseInt(aiSelect.value);
+        const dmText = dmMode === 'ai' ? 'AI地城主' : '人类地城主';
+        
+        const summary = `配置：${totalPlayers}人游戏，${humanPlayers}个人类玩家，${aiSelect.value}个AI玩家，${dmText}`;
+        
+        const summaryElement = document.getElementById('configSummary');
+        if (summaryElement) {
+            summaryElement.textContent = summary;
+        }
+
+        // 更新AI选项的最大值
+        const maxAIOptions = totalPlayers;
+        while (aiSelect.options.length > maxAIOptions) {
+            aiSelect.removeChild(aiSelect.lastElementChild);
+        }
+        while (aiSelect.options.length < maxAIOptions) {
+            const option = document.createElement('option');
+            option.value = aiSelect.options.length;
+            option.textContent = `${aiSelect.options.length}个`;
+            aiSelect.appendChild(option);
+        }
     }
 
     setupSocketEvents() {
         this.socket.on('gameCreated', (data) => {
             this.currentGameId = data.gameId;
-            this.showGameInterface();
-            this.updateGameState(data.game);
+            this.showCharacterCreation();
             this.addNotification(`游戏创建成功！游戏ID: ${data.gameId}`);
+        });
+
+        this.socket.on('characterCreated', (gameState) => {
+            this.showGameInterface();
+            this.updateGameState(gameState);
         });
 
         this.socket.on('playerJoined', (gameState) => {
@@ -59,9 +112,20 @@ class GameClient {
             return;
         }
 
-        this.socket.emit('createGame', {
-            scenario: this.selectedScenario
-        });
+        const gameConfig = {
+            scenario: this.selectedScenario,
+            totalPlayers: parseInt(document.getElementById('totalPlayers').value),
+            aiPlayers: parseInt(document.getElementById('aiPlayers').value),
+            dmMode: document.getElementById('dmMode').value
+        };
+
+        // 验证配置
+        if (gameConfig.aiPlayers >= gameConfig.totalPlayers) {
+            alert('AI玩家数量不能等于或超过总玩家数量');
+            return;
+        }
+
+        this.socket.emit('createGame', gameConfig);
     }
 
     joinGame() {
@@ -80,9 +144,106 @@ class GameClient {
         });
     }
 
+    showCharacterCreation() {
+        document.getElementById('gameSetup').classList.add('hidden');
+        document.getElementById('characterCreation').classList.remove('hidden');
+        this.loadBackgrounds();
+        this.setupAttributeAllocation();
+    }
+
     showGameInterface() {
         document.getElementById('gameSetup').classList.add('hidden');
+        document.getElementById('characterCreation').classList.add('hidden');
         document.getElementById('gameInterface').classList.remove('hidden');
+    }
+
+    loadBackgrounds() {
+        // 这里应该从服务器获取背景数据，暂时硬编码
+        const backgrounds = [
+            { id: 'fallenNoble', name: '落魄贵族', description: '出身名门但家道中落' },
+            { id: 'scholar', name: '游学书生', description: '饱读诗书的学者' },
+            { id: 'formerAssassin', name: '前刺客', description: '曾经的江湖人士' },
+            { id: 'merchantSon', name: '商人之子', description: '商贾家庭出身' }
+        ];
+
+        const container = document.getElementById('backgroundSelection');
+        container.innerHTML = '';
+
+        backgrounds.forEach(bg => {
+            const div = document.createElement('div');
+            div.className = 'scenario-card';
+            div.innerHTML = `<h4>${bg.name}</h4><p>${bg.description}</p>`;
+            div.onclick = () => {
+                document.querySelectorAll('#backgroundSelection .scenario-card').forEach(c => c.classList.remove('selected'));
+                div.classList.add('selected');
+                this.selectedBackground = bg;
+            };
+            container.appendChild(div);
+        });
+    }
+
+    setupAttributeAllocation() {
+        const inputs = ['strategy', 'eloquence', 'knowledge', 'insight', 'connections'];
+        inputs.forEach(attr => {
+            const input = document.getElementById(attr);
+            input.addEventListener('input', () => this.updateRemainingPoints());
+        });
+        this.updateRemainingPoints();
+    }
+
+    updateRemainingPoints() {
+        const inputs = ['strategy', 'eloquence', 'knowledge', 'insight', 'connections'];
+        const total = inputs.reduce((sum, attr) => {
+            return sum + parseInt(document.getElementById(attr).value || 0);
+        }, 0);
+        const remaining = 5 - total;
+        document.getElementById('remainingPoints').textContent = remaining;
+        
+        // 禁用超出点数的输入
+        inputs.forEach(attr => {
+            const input = document.getElementById(attr);
+            if (remaining < 0) {
+                input.style.borderColor = 'red';
+            } else {
+                input.style.borderColor = '';
+            }
+        });
+    }
+
+    createCharacter() {
+        const name = document.getElementById('characterName').value.trim();
+        if (!name) {
+            alert('请输入角色名称');
+            return;
+        }
+
+        if (!this.selectedBackground) {
+            alert('请选择角色背景');
+            return;
+        }
+
+        const remaining = parseInt(document.getElementById('remainingPoints').textContent);
+        if (remaining !== 0) {
+            alert('请分配完所有属性点');
+            return;
+        }
+
+        const attributes = {
+            strategy: parseInt(document.getElementById('strategy').value),
+            eloquence: parseInt(document.getElementById('eloquence').value),
+            knowledge: parseInt(document.getElementById('knowledge').value),
+            insight: parseInt(document.getElementById('insight').value),
+            connections: parseInt(document.getElementById('connections').value)
+        };
+
+        this.socket.emit('createCharacter', {
+            gameId: this.currentGameId,
+            characterData: {
+                name,
+                background: this.selectedBackground,
+                attributes
+            }
+        });
     }
 
     updateGameState(gameState) {
@@ -239,6 +400,10 @@ function joinGame() {
 
 function submitAction() {
     gameClient.submitAction();
+}
+
+function createCharacter() {
+    gameClient.createCharacter();
 }
 
 // 初始化游戏客户端
