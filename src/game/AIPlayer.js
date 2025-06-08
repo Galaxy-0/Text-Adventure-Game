@@ -132,6 +132,14 @@ class AIPlayer extends Character {
     );
     if (hasImportantEvent) urgency += 0.3;
 
+    // 检查是否有其他玩家需要帮助或配合
+    const needsCooperation = this.assessCooperationNeeds(gameState);
+    if (needsCooperation) urgency += 0.4;
+
+    // 检查是否应该支持其他玩家的行动
+    const shouldSupport = this.shouldSupportOthers(gameState);
+    if (shouldSupport) urgency += 0.5;
+
     return Math.min(urgency, 1.0);
   }
 
@@ -146,8 +154,16 @@ class AIPlayer extends Character {
   }
 
   generateAction(gameState) {
+    // 检查是否应该配合其他玩家
+    const cooperativeAction = this.tryGenerateCooperativeAction(gameState);
+    if (cooperativeAction) {
+      this.lastActionTime = Date.now();
+      this.lastActionTurn = gameState.currentTurn;
+      return cooperativeAction;
+    }
+
     // 根据性格和当前状况生成行动
-    const actionType = this.selectActionType();
+    const actionType = this.selectActionType(gameState);
     const attribute = this.selectAttribute(actionType);
     
     const action = {
@@ -165,11 +181,16 @@ class AIPlayer extends Character {
     return action;
   }
 
-  selectActionType() {
+  selectActionType(gameState) {
     // 根据性格偏好选择行动类型
-    const preferences = this.personality.actionPreference;
-    const weights = preferences.map((type, index) => preferences.length - index);
+    const preferences = this.personality.actionPreference.slice();
     
+    // 根据当前情况调整行动偏好
+    if (this.shouldPrioritizeTeamwork(gameState)) {
+      preferences.unshift('social', 'dialogue');
+    }
+
+    const weights = preferences.map((type, index) => preferences.length - index);
     const totalWeight = weights.reduce((sum, weight) => sum + weight, 0);
     let random = Math.random() * totalWeight;
     
@@ -262,6 +283,146 @@ class AIPlayer extends Character {
     };
     
     return baseTimes[actionType] || 10;
+  }
+
+  // 新增：评估是否需要团队协作
+  assessCooperationNeeds(gameState) {
+    const recentNarrative = gameState.narrative.slice(-3);
+    
+    // 检查最近的叙述中是否提到了需要配合的情况
+    const cooperationKeywords = [
+      '配合', '协作', '合作', '一起', '共同', '协助', '支援',
+      '团队', '联手', '齐心', '并肩', '互相', '分工'
+    ];
+    
+    return recentNarrative.some(event => 
+      cooperationKeywords.some(keyword => event.text.includes(keyword))
+    );
+  }
+
+  // 新增：判断是否应该支持其他玩家
+  shouldSupportOthers(gameState) {
+    const recentActions = gameState.narrative.slice(-2);
+    
+    // 检查是否有其他玩家最近采取了行动，且我们可以协助
+    return recentActions.some(event => {
+      const text = event.text;
+      // 检查是否有其他玩家的行动提及
+      const hasOtherPlayerAction = gameState.players.some(player => 
+        !player.isAI && player.name !== this.name && text.includes(player.name)
+      );
+      
+      // 检查是否是可以协助的行动类型
+      const isAssistableAction = [
+        '探索', '调查', '观察', '寻找', '检查', '前往'
+      ].some(actionWord => text.includes(actionWord));
+      
+      return hasOtherPlayerAction && isAssistableAction;
+    });
+  }
+
+  // 新增：判断是否应该优先考虑团队合作
+  shouldPrioritizeTeamwork(gameState) {
+    // 检查团队状态
+    const humanPlayers = gameState.players.filter(p => !p.isAI);
+    const recentNarrative = gameState.narrative.slice(-2);
+    
+    // 如果最近的叙述中提到了危险或挑战，优先团队行动
+    const dangerKeywords = ['危险', '威胁', '敌人', '陷阱', '困难', '挑战'];
+    const hasDanger = recentNarrative.some(event => 
+      dangerKeywords.some(keyword => event.text.includes(keyword))
+    );
+    
+    // 如果有人类玩家最近行动了，倾向于配合
+    const hasRecentHumanAction = recentNarrative.some(event => 
+      humanPlayers.some(player => event.text.includes(player.name))
+    );
+    
+    return hasDanger || hasRecentHumanAction;
+  }
+
+  // 新增：尝试生成协作性行动
+  tryGenerateCooperativeAction(gameState) {
+    const recentNarrative = gameState.narrative.slice(-2);
+    const humanPlayers = gameState.players.filter(p => !p.isAI);
+    
+    // 查找最近的人类玩家行动
+    let lastHumanAction = null;
+    let lastHumanPlayer = null;
+    
+    for (let i = recentNarrative.length - 1; i >= 0; i--) {
+      const event = recentNarrative[i];
+      for (const player of humanPlayers) {
+        if (event.text.includes(player.name + ':') || event.text.includes(player.name + '：')) {
+          lastHumanAction = event.text;
+          lastHumanPlayer = player;
+          break;
+        }
+      }
+      if (lastHumanAction) break;
+    }
+    
+    if (!lastHumanAction || !lastHumanPlayer) {
+      return null;
+    }
+    
+    // 根据人类玩家的行动生成配合行动
+    return this.generateSupportiveAction(lastHumanAction, lastHumanPlayer, gameState);
+  }
+
+  // 新增：生成支持性行动
+  generateSupportiveAction(humanAction, humanPlayer, gameState) {
+    const cooperativeActions = {
+      '前往': {
+        description: `${this.name}决定跟随${humanPlayer.name}，一起前往查看`,
+        type: 'exploration',
+        attribute: 'insight'
+      },
+      '观察': {
+        description: `${this.name}协助${humanPlayer.name}观察，从不同角度寻找线索`,
+        type: 'exploration', 
+        attribute: 'insight'
+      },
+      '检查': {
+        description: `${this.name}在${humanPlayer.name}检查的同时，留意周围的安全状况`,
+        type: 'exploration',
+        attribute: 'strategy'
+      },
+      '询问': {
+        description: `${this.name}补充${humanPlayer.name}的询问，从另一个角度获取信息`,
+        type: 'dialogue',
+        attribute: 'eloquence'
+      },
+      '寻找': {
+        description: `${this.name}配合${humanPlayer.name}的搜寻，扩大搜索范围`,
+        type: 'exploration',
+        attribute: 'insight'
+      }
+    };
+    
+    // 查找匹配的行动类型
+    for (const [keyword, actionTemplate] of Object.entries(cooperativeActions)) {
+      if (humanAction.includes(keyword)) {
+        return {
+          ...actionTemplate,
+          difficulty: this.calculateDifficulty(actionTemplate.type) - 2, // 协作降低难度
+          timeSpent: this.calculateTimeSpent(actionTemplate.type),
+          isAI: true,
+          isCooperative: true
+        };
+      }
+    }
+    
+    // 默认的支持性行动
+    return {
+      description: `${this.name}观察${humanPlayer.name}的行动，准备提供必要的协助`,
+      type: 'social',
+      attribute: 'insight',
+      difficulty: 10,
+      timeSpent: 5,
+      isAI: true,
+      isCooperative: true
+    };
   }
 
   getState() {

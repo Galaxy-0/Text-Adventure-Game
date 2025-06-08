@@ -43,6 +43,28 @@ io.on('connection', (socket) => {
     const result = gameManager.createCharacter(data.gameId, socket.id, data.characterData);
     if (result.success) {
       io.to(data.gameId).emit('characterCreated', result.game);
+      
+      // 如果游戏已开始，通知当前行动玩家
+      const game = gameManager.getGame(data.gameId);
+      if (game && game.gameState === 'playing' && game.waitingForPlayer) {
+        io.to(game.waitingForPlayer).emit('yourTurn', { 
+          isYourTurn: true,
+          currentPlayer: result.game.currentPlayer 
+        });
+        
+        // 通知其他玩家等待
+        const allSockets = io.sockets.adapter.rooms.get(data.gameId);
+        if (allSockets) {
+          allSockets.forEach(socketId => {
+            if (socketId !== game.waitingForPlayer) {
+              io.to(socketId).emit('yourTurn', { 
+                isYourTurn: false,
+                currentPlayer: result.game.currentPlayer 
+              });
+            }
+          });
+        }
+      }
     } else {
       socket.emit('error', result.error);
     }
@@ -61,10 +83,35 @@ io.on('connection', (socket) => {
   socket.on('playerAction', async (data) => {
     const result = await gameManager.processAction(data.gameId, socket.id, data.action);
     if (result.success) {
-      io.to(data.gameId).emit('gameUpdate', result.gameState);
+      // 为每个玩家设置是否轮到他们行动
+      const gameState = result.gameState;
+      const game = gameManager.getGame(data.gameId);
+      
+      // 向所有玩家广播游戏状态更新
+      io.to(data.gameId).emit('gameUpdate', gameState);
+      
+      // 单独告知每个玩家是否轮到他们
+      if (game && game.waitingForPlayer) {
+        io.to(game.waitingForPlayer).emit('yourTurn', { 
+          isYourTurn: true,
+          currentPlayer: gameState.currentPlayer 
+        });
+        
+        // 通知其他玩家等待
+        const allSockets = io.sockets.adapter.rooms.get(data.gameId);
+        if (allSockets) {
+          allSockets.forEach(socketId => {
+            if (socketId !== game.waitingForPlayer) {
+              io.to(socketId).emit('yourTurn', { 
+                isYourTurn: false,
+                currentPlayer: gameState.currentPlayer 
+              });
+            }
+          });
+        }
+      }
       
       if (result.needsLLMResponse) {
-        const game = gameManager.getGame(data.gameId);
         const isAIMaster = game && game.isAIMaster;
         const llmResponse = await llmService.generateResponse(result.gameState, data.action, isAIMaster);
         const updateResult = gameManager.updateGameWithLLMResponse(data.gameId, llmResponse);
